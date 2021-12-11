@@ -1,6 +1,6 @@
 import java.io.{ FileOutputStream, OutputStream }
 import scala.util.{ Failure, Success, Try }
-import DiagramEntity.{ Executor, Object, UseCase }
+import DiagramEntity.{ Executor, Object, PostCondition, PreCondition, UseCase }
 import net.sourceforge.plantuml.SourceStringReader
 
 class DiagramExporter {
@@ -30,23 +30,42 @@ class DiagramExporter {
   private def generateDiagramSource(useCases: List[UseCase]): String = {
     useCaseDiagram(useCases.flatMap { useCase =>
       val executors: List[Executor] = useCase.executors
+      val conditions: List[DiagramEntity.Condition] = useCase.condition
       val actors: List[String] = useCase.executors.map(_.value).distinct.map { executor =>
         s" actor ${executor.replace(" ", "_").toLowerCase}"
       }
-      actors ++ useCase.objectsWithAction.flatMap { obj =>
-        executors.map { executor =>
-          if (executor.action == obj.action) {
-            s"${executor.value.replace(" ", "_").toLowerCase} -- (${obj.action.value} ${obj.value})"
-          } else {
-            s"${executor.value.replace(" ", "_").toLowerCase} -- (${executor.action.value})"
+      actors ++ useCase.objectsWithAction.flatMap {
+        obj =>
+          executors.flatMap {
+            executor =>
+              conditions.find(_.obj.action == executor.action) match {
+                case Some(cond) =>
+                  cond match {
+                    case pre: PreCondition =>
+                      pre.objects.map { o =>
+                        s"${executor.value.replace(" ", "_").toLowerCase} -- (${o.action.value} ${o.value}): ${pre.obj.action.value}"
+                      }
+                    case post: PostCondition =>
+                      post.objects.map { o =>
+                        s"(${o.action.value} ${o.value}) -- (${post.obj.action.value} ${o.value}): ${post.obj.action.value}"
+                      }
+                  }
+
+                case None =>
+                  if (executor.action == obj.action) {
+                    List(s"${executor.value.replace(" ", "_").toLowerCase} -- (${obj.action.value} ${obj.value})")
+                  } else {
+                    List()
+                  }
+              }
           }
-        }
-      }
+      }.distinct
     })
 
   }
 
   def useCaseDiagram(useCases: List[String]): String = {
+    println(useCases)
     s"""
        |$startUml
        |${useCases.mkString("\n")}

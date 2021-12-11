@@ -4,15 +4,20 @@ object DiagramEntity {
     value: String,
   )
 
+  sealed trait Condition {
+    val obj: Object
+    val objects: List[Object]
+  }
+
   case class PreCondition(
-    value: String,
+    obj: Object,
     objects: List[Object]
-  )
+  ) extends Condition
 
   case class PostCondition(
-    value: String,
+    val obj: Object,
     objects: List[Object]
-  )
+  ) extends Condition
 
   case class Executor(
     index: Int,
@@ -26,6 +31,7 @@ object DiagramEntity {
 
   case class UseCase(
     executors: List[Executor],
-    objectsWithAction: List[Object]
+    objectsWithAction: List[Object],
+    condition: List[Condition],
   )
 }

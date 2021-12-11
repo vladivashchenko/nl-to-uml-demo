@@ -20,6 +20,7 @@ object Relations extends StringEnum[Relations] with StringCirceEnum[Relations] {
   case object Compound extends Relations("compound")
   case object Ccomp extends Relations("ccomp")
   case object AdvclAgent extends Relations("advcl.*")
+  case object AdvclBefore extends Relations("advcl:before")
   case object Case extends Relations("case")
   case object Parataxis extends Relations("parataxis")
   case object Amod extends Relations("amod")

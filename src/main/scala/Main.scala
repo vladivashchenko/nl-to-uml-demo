@@ -1,7 +1,7 @@
 import java.net.{ URLDecoder, URLEncoder }
 import scala.annotation.tailrec
 import scala.collection.JavaConverters.asScalaBufferConverter
-import DiagramEntity.{ Action, Executor, Object, PreCondition, UseCase }
+import DiagramEntity.{ Action, Condition, Executor, Object, PostCondition, PreCondition, UseCase }
 import edu.stanford.nlp.trees.Tree
 import scalaj.http.{ Http, HttpResponse }
 import edu.stanford.nlp.trees.tregex.{ TregexMatcher, TregexPattern }
@@ -114,9 +114,10 @@ object Main extends App {
 
   private val requirement: String =
     List(
-      "Distributed lock ensures that request was processed successfully by server.",
+//      "Distributed lock ensures that request was processed successfully by server.",
 //      "Dole was defeated by Clinton.",
-//      "Emma shut down her computer before she ate the cake and she visited Tony in his room.",
+//      "Before she ate the cake, Emma shut down her computer and she visited Tony in his room.",
+      "Before exiting the room, user should turn out lights.",
       //      "Digicel requires us to set up a notification gateway API between their website for voucher generation.",
       //      "The idea behind this is to use the client app for receiving voucher codes from the Digicel website as push notification/inbox.",
 //      "Users are able to play more than one game at a time.",
@@ -225,28 +226,50 @@ object Main extends App {
                 }
             }
             println(s"executors = $executors ")
-            val objects: List[Object] = actions.flatMap { action =>
-              enhancedPlusPlusDependencies.collect {
-                case eppDep if Relations.Dobj.value == eppDep.dep && eppDep.governor == action.index =>
-                  Object(eppDep.dependentGloss, action)
-                case eppDep if eppDep.dep.matches(Relations.Nsubjpass.value) && eppDep.governor == action.index =>
-                  Object(eppDep.dependentGloss, action)
+            val objectsWithActions: List[Object] = actions
+              .flatMap { a =>
+                enhancedPlusPlusDependencies.collect {
+                  case eppDep if Relations.Dobj.value == eppDep.dep && eppDep.governor == a.index =>
+                    Object(eppDep.dependentGloss, a)
+                  case eppDep if eppDep.dep.matches(Relations.Nsubjpass.value) && eppDep.governor == a.index =>
+                    Object(eppDep.dependentGloss, a)
+                }
               }
-            }
+            val objects: List[Object] = objectsWithActions ++ actions
+                    .filterNot(a => objectsWithActions.exists(o => o.action == a))
+                    .map { action =>
+                      Object("", action)
+                    }
+
             println(s"objects = $objects ")
             val tree: Tree = Tree.valueOf(sentence.parse)
             val patternMW: TregexPattern = TregexPattern.compile("SBAR")
             val matcher: TregexMatcher = patternMW.matcher(tree)
             val conditionFound: Boolean = matcher.findNextMatchingNode
-            if (conditionFound) {
-              val conditionDeps: List[PreCondition] = enhancedPlusPlusDependencies.collect {
+
+            val conditions: List[Condition] = if (conditionFound) {
+              enhancedPlusPlusDependencies.collect {
+                case eppDep if eppDep.dep == Relations.AdvclBefore.value =>
+                  val objs: List[Object] = objects.filter(_.action.index == eppDep.dependent)
+                  val obj: Object = objects.filter(_.action.index == eppDep.governor).head
+                  PostCondition(
+                    obj,
+                    objs
+                  )
                 case eppDep if eppDep.dep.matches(Relations.AdvclAgent.value) || eppDep.dep == Relations.Ccomp.value =>
-                  val objs: List[Object] = objects.filter(_.action.index == eppDep.governor)
-                  PreCondition(matcher.getMatch.yieldWords().asScala.mkString(" "), objects = objs)
+                  val objs: List[Object] = objects.filter(_.action.index == eppDep.dependent)
+                  val obj: Object = objects.filter(_.action.index == eppDep.governor).head
+                  PreCondition(
+                    obj,
+                    objs
+                  )
               }
-              println(s"conditionDeps = $conditionDeps")
+            } else {
+              List.empty
             }
-            UseCase(executors, objects)
+
+            println(s"conditions = $conditions ")
+            UseCase(executors, objects, conditions)
           }
           val a = "(*) --> "
           diagramExporter.generateUseCaseDiagram(useCases)
