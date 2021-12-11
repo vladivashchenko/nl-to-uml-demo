@@ -1,10 +1,10 @@
-import java.net.{ URLDecoder, URLEncoder }
+import java.net.URLEncoder
 import scala.annotation.tailrec
 import scala.collection.JavaConverters.asScalaBufferConverter
 import DiagramEntity.{ Action, Condition, Executor, Object, PostCondition, PreCondition, UseCase }
 import edu.stanford.nlp.trees.Tree
-import scalaj.http.{ Http, HttpResponse }
 import edu.stanford.nlp.trees.tregex.{ TregexMatcher, TregexPattern }
+import scalaj.http.{ Http, HttpResponse }
 
 object Main extends App {
 
@@ -16,13 +16,13 @@ object Main extends App {
     enhancedPlusPlusDependency: List[EnhancedPlusPlusDependency]
   ): List[Action] = {
     val verbs: List[Token] = tokens.filter(t => VerbTag.values.map(_.value).contains(t.pos))
-//    println(s"verbs = $verbs")
+//    // println(s"verbs = $verbs")
     val verbsDependencies: List[EnhancedPlusPlusDependency] =
       enhancedPlusPlusDependency.filter { eppDep =>
-//        println(s"$eppDep => ${actionRelations.exists(_.value.matches(eppDep.dep))}")
+//        // println(s"$eppDep => ${actionRelations.exists(_.value.matches(eppDep.dep))}")
         actionRelations.exists(_.value.matches(eppDep.dep))
       }
-//    println(s"verbsDependencies = $verbsDependencies")
+//    // println(s"verbsDependencies = $verbsDependencies")
 
     val actionsFinal: List[Action] = verbsDependencies
       .filter { verbsDep =>
@@ -36,7 +36,7 @@ object Main extends App {
         Action(dep.governor, dep.governorGloss)
       }
       .distinct
-//    println(s"actionsFinal = $actionsFinal")
+//    // println(s"actionsFinal = $actionsFinal")
 
     val actionsInLemmaForm: List[Action] = actionsFinal.flatMap {
       case action =>
@@ -46,7 +46,7 @@ object Main extends App {
               Action(action.index, t.lemma)
           }
     }
-//    println(s"actionsInLemmaForm = $actionsInLemmaForm")
+//    // println(s"actionsInLemmaForm = $actionsInLemmaForm")
 
     actionsInLemmaForm.map {
 
@@ -54,45 +54,75 @@ object Main extends App {
         val maybePart: Option[EnhancedPlusPlusDependency] = verbsDependencies.find { dep =>
           dep.dep == Relations.CompoundPart.value && dep.governor == action.index
         }
-        maybePart
+        val a = maybePart
           .map(p => action.copy(value = s"${action.value} ${p.dependentGloss}"))
           .getOrElse(action)
+        val maybeObj: Option[EnhancedPlusPlusDependency] = enhancedPlusPlusDependency.find { dep =>
+          dep.dep == Relations.Obj.value && dep.governor == action.index
+        }
+        maybeObj.map(p => a.copy(value = s"${a.value} ${p.dependentGloss}")).getOrElse(a)
     }
   }
 
   @tailrec
-  def getUseCases(
+  def getAllVerbPhases(
     matcher: TregexMatcher,
     useCases: List[String],
   ): List[String] = {
     if (matcher.findNextMatchingNode()) {
       val `match`: Tree = matcher.getMatch
       // do what we want to do with the subtree
-      val actor: Option[String] = `match`
-        .getChild(0)
-        .labeledYield()
-        .asScala
-        .toList
-        .collectFirst {
-          case labelledWord if NounTag.values.exists(_.value == labelledWord.tag().value()) =>
-            labelledWord.word()
-        }
-      val action: String = `match`.getChild(1).yieldWords().asScala.mkString(" ")
+      val action: String = `match`.getChild(0).yieldWords().asScala.mkString(" ")
 
-      val actualUseCases: List[String] = actor match {
-        case Some(actor) =>
-          List(
-            s" actor ${actor.replace(" ", "_").toLowerCase}",
-            s"${actor.replace(" ", "_").toLowerCase} -- ($action)",
-          )
-        case None => List.empty
-      }
-      getUseCases(
+      getAllVerbPhases(
         matcher,
-        useCases ++ actualUseCases
+        useCases ++ List(action)
       )
     } else {
       useCases
+    }
+  }
+
+  def conditionsFromSentence(
+    sentence: Sentence,
+    enhancedPlusPlusDependencies: List[EnhancedPlusPlusDependency],
+    objects: List[Object]
+  ): List[Condition] = {
+    val tree: Tree = Tree.valueOf(sentence.parse)
+    val patternMW: TregexPattern = TregexPattern.compile("SBAR")
+    val matcher: TregexMatcher = patternMW.matcher(tree)
+    val conditionFound: Boolean = matcher.findNextMatchingNode
+
+    if (conditionFound) {
+      enhancedPlusPlusDependencies.flatMap {
+        case eppDep if eppDep.dep == Relations.AdvclBefore.value =>
+          val objs: List[Object] = objects.filter(_.action.index == eppDep.dependent)
+          val obj: Object = objects.filter(_.action.index == eppDep.governor).head
+          Some(
+            PostCondition(
+              obj,
+              objs
+            )
+          )
+        case eppDep if eppDep.dep.matches(Relations.AdvclAgent.value) || eppDep.dep == Relations.Ccomp.value =>
+          println("aaaaa")
+          val objs: List[Object] = objects.filter(_.action.index == eppDep.dependent)
+          val obj: Option[Object] = objects.find(_.action.index == eppDep.governor)
+          println(obj)
+          obj match {
+            case Some(o) =>
+              Some(
+                PreCondition(
+                  o,
+                  objs
+                )
+              )
+            case None => None
+          }
+        case _ => None
+      }
+    } else {
+      List.empty
     }
   }
 
@@ -114,10 +144,15 @@ object Main extends App {
 
   private val requirement: String =
     List(
-//      "Distributed lock ensures that request was processed successfully by server.",
+      "User starts app.",
+      "User see app screen.",
+      "User enters password.",
+      "User click login button.",
+      "If user entered creds successfully, he can see profile.",
+      //      "Distributed lock ensures that request was processed successfully by server.",
 //      "Dole was defeated by Clinton.",
-//      "Before she ate the cake, Emma shut down her computer and she visited Tony in his room.",
-      "Before exiting the room, user should turn out lights.",
+//      "Before Emma ate the cake, she shut down her computer and she visited Tony in his room.",
+//      "Before exiting the room, user should turn out lights.",
       //      "Digicel requires us to set up a notification gateway API between their website for voucher generation.",
       //      "The idea behind this is to use the client app for receiving voucher codes from the Digicel website as push notification/inbox.",
 //      "Users are able to play more than one game at a time.",
@@ -132,7 +167,7 @@ object Main extends App {
     .timeout(60000, 60000)
     .asString
 
-//  println(response0.body)
+//  // println(response0.body)
 
   val decoded0: Either[String, CoreNlpResult] = nlpDecoder.decodeNlpResponse(response0.body)
 
@@ -145,7 +180,7 @@ object Main extends App {
             val a: Map[Boolean, List[Coreference]] = coreferences
               .groupBy(a => CoreferenceType.withValueOpt(a.`type`).contains(CoreferenceType.PROPER))
             val keys: List[String] = a(false).map(_.text)
-            val value: String = a(true).head.text
+            val value: String = a.get(true).flatMap(_.headOption.map(_.text)).getOrElse("")
             keys.map { key =>
               key -> value
             }.toMap
@@ -184,10 +219,10 @@ object Main extends App {
           val useCases: List[UseCase] = res.sentences.map { sentence =>
             val tokens: List[Token] = sentence.tokens
             val enhancedPlusPlusDependencies: List[EnhancedPlusPlusDependency] = sentence.enhancedPlusPlusDependencies
-            sentence.enhancedPlusPlusDependencies.foreach(println)
+            //sentence.enhancedPlusPlusDependencies.foreach(println)
 
             val actions: List[Action] = actionsFromSentence(tokens, enhancedPlusPlusDependencies)
-            println(s"actions = $actions ")
+            // println(s"actions = $actions ")
             val executors: List[Executor] = actions.flatMap { action =>
               enhancedPlusPlusDependencies
                 .collect {
@@ -225,7 +260,7 @@ object Main extends App {
 
                 }
             }
-            println(s"executors = $executors ")
+            // println(s"executors = $executors ")
             val objectsWithActions: List[Object] = actions
               .flatMap { a =>
                 enhancedPlusPlusDependencies.collect {
@@ -241,38 +276,13 @@ object Main extends App {
                       Object("", action)
                     }
 
-            println(s"objects = $objects ")
-            val tree: Tree = Tree.valueOf(sentence.parse)
-            val patternMW: TregexPattern = TregexPattern.compile("SBAR")
-            val matcher: TregexMatcher = patternMW.matcher(tree)
-            val conditionFound: Boolean = matcher.findNextMatchingNode
-
-            val conditions: List[Condition] = if (conditionFound) {
-              enhancedPlusPlusDependencies.collect {
-                case eppDep if eppDep.dep == Relations.AdvclBefore.value =>
-                  val objs: List[Object] = objects.filter(_.action.index == eppDep.dependent)
-                  val obj: Object = objects.filter(_.action.index == eppDep.governor).head
-                  PostCondition(
-                    obj,
-                    objs
-                  )
-                case eppDep if eppDep.dep.matches(Relations.AdvclAgent.value) || eppDep.dep == Relations.Ccomp.value =>
-                  val objs: List[Object] = objects.filter(_.action.index == eppDep.dependent)
-                  val obj: Object = objects.filter(_.action.index == eppDep.governor).head
-                  PreCondition(
-                    obj,
-                    objs
-                  )
-              }
-            } else {
-              List.empty
-            }
-
+            // println(s"objects = $objects ")
+            val conditions: List[Condition] = conditionsFromSentence(sentence, enhancedPlusPlusDependencies, objects)
             println(s"conditions = $conditions ")
             UseCase(executors, objects, conditions)
           }
-          val a = "(*) --> "
           diagramExporter.generateUseCaseDiagram(useCases)
+          diagramExporter.generateActivityDiagram(useCases)
       }
   }
 }

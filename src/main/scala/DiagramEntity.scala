@@ -15,7 +15,7 @@ object DiagramEntity {
   ) extends Condition
 
   case class PostCondition(
-    val obj: Object,
+    obj: Object,
     objects: List[Object]
   ) extends Condition
 
