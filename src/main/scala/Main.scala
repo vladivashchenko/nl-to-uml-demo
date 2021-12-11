@@ -64,6 +64,50 @@ object Main extends App {
     }
   }
 
+  def executorsFromSentence(
+    actions: List[Action],
+    enhancedPlusPlusDependencies: List[EnhancedPlusPlusDependency],
+    tokens: List[Token]
+  ): List[Executor] = {
+    actions.flatMap { action =>
+      enhancedPlusPlusDependencies
+        .collect {
+          case eppDep if Relations.Nsubj.value == eppDep.dep && eppDep.governor == action.index =>
+            val token: (Int, String) = tokens
+              .find(_.originalText == eppDep.dependentGloss)
+              .map { a =>
+                a.index -> a.lemma
+              }
+              .get
+            Executor(token._1, token._2, action)
+          case eppDep
+              if (eppDep.dep.matches(Relations.NmodAgent.value)
+                || eppDep.dep.matches(Relations.OblAgent.value))
+                && eppDep.governor == action.index =>
+            val token: (Int, String) = tokens
+              .find(_.originalText == eppDep.dependentGloss)
+              .map { a =>
+                a.index -> a.lemma
+              }
+              .get
+            Executor(token._1, token._2, action)
+        }
+        .map { ex =>
+          val maybePart: Option[EnhancedPlusPlusDependency] = enhancedPlusPlusDependencies.find { dep =>
+            dep.dep == Relations.Amod.value && dep.governor == ex.index
+          }
+          maybePart
+            .map { dep =>
+              ex.copy(
+                value = s"${tokens.find(_.originalText == dep.dependentGloss).map(_.lemma).get} ${ex.value}"
+              )
+            }
+            .getOrElse(ex)
+
+        }
+    }
+  }
+
   @tailrec
   def getAllVerbPhases(
     matcher: TregexMatcher,
@@ -149,15 +193,15 @@ object Main extends App {
       "User enters password.",
       "User click login button.",
       "If user entered creds successfully, he can see profile.",
-      //      "Distributed lock ensures that request was processed successfully by server.",
+//      "Distributed lock ensures that request was processed successfully by server.",
 //      "Dole was defeated by Clinton.",
 //      "Before Emma ate the cake, she shut down her computer and she visited Tony in his room.",
 //      "Before exiting the room, user should turn out lights.",
-      //      "Digicel requires us to set up a notification gateway API between their website for voucher generation.",
-      //      "The idea behind this is to use the client app for receiving voucher codes from the Digicel website as push notification/inbox.",
+//      "Digicel requires us to set up a notification gateway API between their website for voucher generation.",
+//      "The idea behind this is to use the client app for receiving voucher codes from the Digicel website as push notification/inbox.",
 //      "Users are able to play more than one game at a time.",
-      //      "User is able to play more than one game at a time.",
-      //      "Each user has individual profiles"
+//      "User is able to play more than one game at a time.",
+//      "Each user has individual profiles"
     ).mkString("\n")
 
   val response0: HttpResponse[String] = Http(address0)
@@ -223,43 +267,7 @@ object Main extends App {
 
             val actions: List[Action] = actionsFromSentence(tokens, enhancedPlusPlusDependencies)
             // println(s"actions = $actions ")
-            val executors: List[Executor] = actions.flatMap { action =>
-              enhancedPlusPlusDependencies
-                .collect {
-                  case eppDep if Relations.Nsubj.value == eppDep.dep && eppDep.governor == action.index =>
-                    val token: (Int, String) = tokens
-                      .find(_.originalText == eppDep.dependentGloss)
-                      .map { a =>
-                        a.index -> a.lemma
-                      }
-                      .get
-                    Executor(token._1, token._2, action)
-                  case eppDep
-                      if (eppDep.dep.matches(Relations.NmodAgent.value)
-                        || eppDep.dep.matches(Relations.OblAgent.value))
-                        && eppDep.governor == action.index =>
-                    val token: (Int, String) = tokens
-                      .find(_.originalText == eppDep.dependentGloss)
-                      .map { a =>
-                        a.index -> a.lemma
-                      }
-                      .get
-                    Executor(token._1, token._2, action)
-                }
-                .map { ex =>
-                  val maybePart: Option[EnhancedPlusPlusDependency] = enhancedPlusPlusDependencies.find { dep =>
-                    dep.dep == Relations.Amod.value && dep.governor == ex.index
-                  }
-                  maybePart
-                    .map { dep =>
-                      ex.copy(
-                        value = s"${tokens.find(_.originalText == dep.dependentGloss).map(_.lemma).get} ${ex.value}"
-                      )
-                    }
-                    .getOrElse(ex)
-
-                }
-            }
+            val executors: List[Executor] = executorsFromSentence(actions, enhancedPlusPlusDependencies, tokens)
             // println(s"executors = $executors ")
             val objectsWithActions: List[Object] = actions
               .flatMap { a =>
