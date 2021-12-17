@@ -8,6 +8,7 @@ object Relations extends StringEnum[Relations] with StringCirceEnum[Relations] {
   val values = findValues
 
   case object CompoundPart extends Relations("compound:prt")
+  case object ConjAnd extends Relations("conj:and")
   case object Nsubj extends Relations("nsubj")
   case object NsubjAgent extends Relations("nsubj.*")
   case object NsubjXSubj extends Relations("nsubj:xsubj")

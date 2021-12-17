@@ -142,28 +142,34 @@ object Main extends App {
         case eppDep if eppDep.dep == Relations.AdvclBefore.value =>
           val objs: List[Object] = objects.filter(_.action.index == eppDep.dependent)
           val obj: Object = objects.filter(_.action.index == eppDep.governor).head
-          Some(
+          val a = enhancedPlusPlusDependencies
+            .filter(_.dep == Relations.ConjAnd.value)
+            .filter(_.governor == obj.action.index)
+          val andConds = objs
+            .filter { obj =>
+              a.map(_.governor).contains(obj.action.index)
+            }
+          println(andConds)
+          List(
             PostCondition(
               obj,
-              objs
+              objs ++ andConds
             )
           )
         case eppDep if eppDep.dep.matches(Relations.AdvclAgent.value) || eppDep.dep == Relations.Ccomp.value =>
-          println("aaaaa")
           val objs: List[Object] = objects.filter(_.action.index == eppDep.dependent)
           val obj: Option[Object] = objects.find(_.action.index == eppDep.governor)
-          println(obj)
           obj match {
             case Some(o) =>
-              Some(
+              List(
                 PreCondition(
                   o,
                   objs
                 )
               )
-            case None => None
+            case None => List()
           }
-        case _ => None
+        case _ => List()
       }
     } else {
       List.empty
@@ -188,14 +194,14 @@ object Main extends App {
 
   private val requirement: String =
     List(
-      "User starts app.",
-      "User see app screen.",
-      "User enters password.",
-      "User click login button.",
-      "If user entered creds successfully, he can see profile.",
+//      "User starts app.",
+//      "User see app screen.",
+//      "User enters password.",
+//      "User click login button.",
+//      "If user entered creds successfully, he can see profile.",
 //      "Distributed lock ensures that request was processed successfully by server.",
 //      "Dole was defeated by Clinton.",
-//      "Before Emma ate the cake, she shut down her computer and she visited Tony in his room.",
+      "Before Emma ate the cake, she shut down her computer and she visited Tony in his room.",
 //      "Before exiting the room, user should turn out lights.",
 //      "Digicel requires us to set up a notification gateway API between their website for voucher generation.",
 //      "The idea behind this is to use the client app for receiving voucher codes from the Digicel website as push notification/inbox.",
@@ -248,6 +254,7 @@ object Main extends App {
   formattedAfterCoreference match {
     case Left(value) => Left(value)
     case Right(value) =>
+      println(value)
       val response: HttpResponse[String] = Http(address)
         .postData(
           value
@@ -266,9 +273,9 @@ object Main extends App {
             //sentence.enhancedPlusPlusDependencies.foreach(println)
 
             val actions: List[Action] = actionsFromSentence(tokens, enhancedPlusPlusDependencies)
-            // println(s"actions = $actions ")
+            println(s"actions = $actions ")
             val executors: List[Executor] = executorsFromSentence(actions, enhancedPlusPlusDependencies, tokens)
-            // println(s"executors = $executors ")
+            println(s"executors = $executors ")
             val objectsWithActions: List[Object] = actions
               .flatMap { a =>
                 enhancedPlusPlusDependencies.collect {
@@ -284,7 +291,7 @@ object Main extends App {
                       Object("", action)
                     }
 
-            // println(s"objects = $objects ")
+            println(s"objects = $objects ")
             val conditions: List[Condition] = conditionsFromSentence(sentence, enhancedPlusPlusDependencies, objects)
             println(s"conditions = $conditions ")
             UseCase(executors, objects, conditions)

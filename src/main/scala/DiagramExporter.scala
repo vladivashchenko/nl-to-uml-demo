@@ -70,7 +70,7 @@ class DiagramExporter {
                       }
                     case post: PostCondition =>
                       post.objects.map { o =>
-                        s"(${o.action.value} ${o.value}) -- (${post.obj.action.value} ${o.value}): ${post.obj.action.value}"
+                        s"(${o.action.value} ${o.value}) -- (${post.obj.action.value} ${o.value}): ${o.action.value}"
                       }
                   }
 
@@ -109,12 +109,13 @@ class DiagramExporter {
   }
 
   private def useCaseDiagram(useCases: List[String]): String = {
-    println(useCases)
-    s"""
-       |$startUml
-       |${useCases.mkString("\n")}
-       |$endUml
-       |""".stripMargin
+    val a = s"""
+               |$startUml
+               |${useCases.mkString("\n")}
+               |$endUml
+               |""".stripMargin
+    println(a)
+    a
   }
 
   private def activityDiagram(useCases: List[String]): String = {
